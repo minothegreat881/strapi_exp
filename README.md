@@ -1,78 +1,125 @@
-# Strapi Tutorial (in Slovak)
+# Simple Strapi + Next.js Tutorial
 
-Tento repozitár obsahuje krátky návod, ako vytvoriť jednoduchú webovú stránku pomocou Strapi,
-ktorú je možné upravovať prostredníctvom administračného rozhrania.
+This guide walks you through building a minimal website where all content is editable via the Strapi admin interface. We create the backend from scratch, set up a small Next.js frontend and show how they connect.
 
-## Požiadavky
-- Node.js >= 18
-- npx (súčasť Node.js)
-- Docker (voliteľne pre jednoduché spustenie)
+## Prerequisites
 
-## 1. Vytvorenie projektu
-1. Otvorte terminál a spustite:
+- Node.js 16 or newer
+- npm or yarn
+- Git
+- (optional) Docker if you prefer containerized setup
+
+## 1. Create a Strapi project
+
+1. Open a terminal and run:
+
    ```bash
-   npx create-strapi-app my-strapi-app --quickstart
+   npx create-strapi-app@latest my-strapi-backend --quickstart
    ```
-   Tento príkaz stiahne potrebné závislosti a spustí Strapi v režime *quickstart*.
-2. Po spustení sa zobrazí stránka pre vytvorenie prvého administrátorského účtu
-   (otvorí sa na `http://localhost:1337/admin`). Vytvorte si účet.
-## Alternatívne spustenie s Dockerom
-1. Uistite sa, že máte nainštalovaný Docker a Docker Compose.
-2. V tomto repozitári spustite `docker-compose up`.
-3. Strapi bude dostupné na `http://localhost:1337` a statický front-end na `http://localhost:8080`.
-4. Pri prvom spustení vytvorte administrátorský účet na `/admin`.
 
+   After the installation finishes, Strapi starts on `http://localhost:1337` and prompts you to create the first admin user at `http://localhost:1337/admin`.
 
-## 2. Definovanie obsahu
-1. V administračnom rozhraní prejdite na *Content-type Builder* a vytvorte nový
-   obsahový typ (collection type) `Page`.
-2. Pridajte aspoň dve polia:
-   - `title` typu *Text*.
-   - `content` typu *Rich Text* (alebo *Text*).
-3. Uložte a Strapi automaticky reštartuje server.
+2. Sign up in the admin UI. Strapi is now running locally using SQLite.
 
-## 3. Vytvorenie položiek
-1. V menu *Content Manager* otvorte `Pages` a vytvorte novú položku s názvom a
-   obsahom (napr. "Úvod" a krátky text).
-2. Aktivujte publikovanie tejto položky (tlačidlo *Publish*).
+## 2. Explore the project structure
 
-## 4. Používanie API
-Strapi automaticky sprístupňuje REST API. Publikované stránky môžete získať cez:
+Inside `my-strapi-backend` you will find the `src` folder containing your future APIs and configuration. The `config` directory holds settings such as CORS and database connection.
+
+## 3. Create a content type
+
+1. In the admin panel open **Content-type Builder** and create a new **collection type** named `Page`.
+2. Add the following fields:
+   - **Title** – text (required)
+   - **Slug** – UID populated from Title
+   - **Content** – rich text
+3. Save; Strapi rebuilds and the new type appears under **Content Manager**.
+
+## 4. Add some data
+
+Open **Content Manager → Pages → Create new Page** and create entries such as `Home` and `About`. After saving you can fetch them via the API.
+
+Enable read permissions for the public role:
+
+1. Settings → Roles & Permissions → Public
+2. Under **Page** check **find** and **findOne**, then save.
+
+Now `GET http://localhost:1337/api/pages` returns your pages.
+
+## 5. Simple Next.js frontend
+
+Create a new app next to the backend:
+
 ```bash
-GET http://localhost:1337/api/pages
+npx create-next-app@latest my-strapi-frontend
+cd my-strapi-frontend
+npm install axios
 ```
-Odpoveď bude obsahovať JSON s názvom a obsahom stránky.
 
-## 5. Jednoduchý front-end
-Nižšie je jednoduchá HTML šablóna (`frontend/index.html`), ktorá načíta dáta z API a zobrazí ich:
-```html
-<!DOCTYPE html>
-<html lang="sk">
-<head>
-  <meta charset="UTF-8" />
-  <title>Moja Stránka</title>
-</head>
-<body>
-  <div id="page"></div>
-  <script>
-    fetch('http://localhost:1337/api/pages')
-      .then(res => res.json())
-      .then(data => {
-        const page = data.data[0].attributes;
-        document.getElementById('page').innerHTML = `
-          <h1>${page.title}</h1>
-          <div>${page.content}</div>
-        `;
-      })
-      .catch(err => console.error(err));
-  </script>
-</body>
-</html>
+Replace `pages/index.js` with:
+
+```javascript
+import axios from 'axios';
+
+export default function Home({ pages }) {
+  return (
+    <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <h1>My Strapi-Powered Site</h1>
+      <ul>
+        {pages.map((p) => (
+          <li key={p.id}>
+            <a href={`/${p.attributes.slug}`}>{p.attributes.title}</a>
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+
+export async function getStaticProps() {
+  const res = await axios.get('http://localhost:1337/api/pages');
+  return { props: { pages: res.data.data }, revalidate: 10 };
+}
 ```
-Uložte tento kód ako `index.html` a otvorte v prehliadači. Po spustení Strapi
-uvidíte obsah načítaný z API. Ak upravíte obsah v admin rozhraní a znova
-načítate stránku, zmeny sa prejavia.
 
-## 6. Záver
-Tento návod demonštruje základnú prácu so Strapi: vytvorenie projektu, definovanie
-obsahu, správa záznamov a využitie API na zobrazenie obsahu na webovej stránke.
+Create `pages/[slug].js`:
+
+```javascript
+import axios from 'axios';
+
+export default function Page({ page }) {
+  if (!page) return <p>Loading...</p>;
+  const { title, content } = page.attributes;
+  return (
+    <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <h1>{title}</h1>
+      <div dangerouslySetInnerHTML={{ __html: content }} />
+    </main>
+  );
+}
+
+export async function getStaticPaths() {
+  const res = await axios.get('http://localhost:1337/api/pages');
+  const paths = res.data.data.map((p) => ({ params: { slug: p.attributes.slug } }));
+  return { paths, fallback: 'blocking' };
+}
+
+export async function getStaticProps({ params }) {
+  const { slug } = params;
+  const res = await axios.get(`http://localhost:1337/api/pages?filters[slug][$eq]=${slug}`);
+  const data = res.data.data;
+  if (!data.length) return { notFound: true };
+  return { props: { page: data[0] }, revalidate: 10 };
+}
+```
+
+Run the frontend with `npm run dev` and visit `http://localhost:3000`. The pages list is generated from Strapi. Editing any page in the admin updates the site after revalidation.
+
+## 6. Optional Docker setup
+
+This repository includes a minimal `docker-compose.yml` showing how you might run Strapi alongside a static frontend served via Nginx. Execute `docker-compose up` to try it.
+
+## 7. Deploying
+
+Deploy Strapi to a host like Heroku or DigitalOcean and push the Next.js site to Vercel. Remember to adjust CORS settings in `my-strapi-backend/config/middlewares.js` to allow your production frontend URL.
+
+With these steps you have a basic website editable from the Strapi admin.
